@@ -306,17 +306,26 @@ class COSModelRegistry(S3ArtifactRepository):
         # Recreate the model directory
         os.makedirs(model_dir, exist_ok=True)
 
-    def load_model(self, model_local_path: str, **kwargs) -> mlflow.pyfunc.PythonModel:
+    def load_model(
+        self, model_local_path: Union[str, Path], **kwargs
+    ) -> mlflow.pyfunc.PythonModel:
         """
         Load the model from the specified local path.
 
         Args:
-            model_local_path (str): Local path to the model directory.
+            model_local_path (str | Path): Local path to the model directory.
             **kwargs: Additional keyword arguments passed to mlflow.pyfunc.load_model().
 
         Returns:
             mlflow.pyfunc.PythonModel: The loaded MLflow Python model.
         """
+        if isinstance(model_local_path, Path):
+            model_local_path = str(model_local_path)
+
+        if not os.path.exists(model_local_path):
+            msg = f"Model path {model_local_path} does not exist."
+            logger.error(msg)
+            raise FileNotFoundError(msg)
         # Load the model using MLflow
         return mlflow.pyfunc.load_model(model_local_path, **kwargs)
 
