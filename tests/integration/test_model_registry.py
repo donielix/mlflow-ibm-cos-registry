@@ -16,6 +16,21 @@ def bucket_name():
 
 @pytest.fixture
 def mock_hash(mocker: MockerFixture):
+    """
+    Creates a test fixture that mocks the COSModelRegistry.write_hash method.
+
+    This fixture allows tests to capture the generated fingerprint hash during model registration
+    by copying it to a specified temporary path. This is useful for verifying that fingerprinting
+    is correctly performed in tests without having to recalculate hashes.
+
+    Args:
+        mocker (MockerFixture): The pytest-mock fixture that provides patching functionality.
+
+    Returns:
+        callable: A wrapper function that accepts a tmp_path parameter and returns the mock patch.
+            The returned function signature is:
+                wrapper(tmp_path: Path) -> MagicMock
+    """
     original_write_hash = COSModelRegistry.write_hash
 
     def mocked_write_hash(directory: str, tmp_path: Path):
@@ -39,6 +54,31 @@ def mock_hash(mocker: MockerFixture):
 def test_model_registration_process(
     bucket_name: str, mock_hash: Callable, tmp_path: Path
 ):
+    """
+    Test the end-to-end model registration process using COSModelRegistry.
+
+    This test verifies the full workflow of:
+    1. Logging a PyFunc model with code and artifacts to the registry
+    2. Verifying the model fingerprint
+    3. Downloading the model artifacts
+    4. Checking the structure of downloaded artifacts
+    5. Loading the model
+    6. Making predictions with the loaded model
+
+    Parameters
+    ----------
+    bucket_name : str
+        Name of the COS bucket to use for the model registry.
+        You can set this up using the environment variable COS_BUCKET_NAME.
+    mock_hash : Callable
+        Mock function for generating fingerprints
+    tmp_path : Path
+        Temporary path provided by pytest fixture for artifact storage
+
+    Notes
+    -----
+    This test requires fixture files: modelcode.py and model.pkl
+    """
     mock_hash(tmp_path)
 
     registry = COSModelRegistry(

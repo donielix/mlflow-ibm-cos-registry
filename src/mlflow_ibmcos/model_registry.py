@@ -8,6 +8,7 @@ import ibm_boto3
 from dirhash import dirhash
 from functools import lru_cache
 from mlflow.utils.file_utils import TempDir
+from pydantic import validate_call
 from mlflow_ibmcos.exceptions import (
     COS_ARGUMENT_REQUIRED,
     FINGERPRINT_RETRIEVAL_ERROR,
@@ -71,11 +72,19 @@ class COSModelRegistry(S3ArtifactRepository):
     FINGERPRINT_IGNORE = ("MLmodel",)
     FINGERPRINT_ALGORITHM = "sha512"
 
-    def __init__(self, bucket: str, model_name: str, model_version: str, **kwargs):
+    @validate_call
+    def __init__(
+        self,
+        bucket: str,
+        model_name: str,
+        model_version: str,
+        prefix: Optional[str] = None,
+        **kwargs,
+    ):
         self._bucket = bucket
         self._model_name = model_name
         self._model_version = model_version
-        self._key = f"{self.PREFIX}/{model_name}/{model_version}"
+        self._key = f"{prefix if prefix else self.PREFIX}/{model_name}/{model_version}"
         self._endpoint_url = (
             kwargs.get("endpoint_url")
             or os.environ.get("AWS_ENDPOINT_URL")
@@ -116,6 +125,7 @@ class COSModelRegistry(S3ArtifactRepository):
             config=self._config,
         )
 
+    @validate_call
     def log_pyfunc_model_as_code(
         self,
         model_code_path: Union[str, Path],
@@ -153,6 +163,7 @@ class COSModelRegistry(S3ArtifactRepository):
 
             self.log_artifacts(local_dir=local_path)
 
+    @validate_call(validate_return=True)
     def _get_remote_fingerprint(self) -> str:
         """
         Retrieves the fingerprint of the model from remote storage.
@@ -189,6 +200,7 @@ class COSModelRegistry(S3ArtifactRepository):
         with open(fingerprint_path, "r") as f:
             return f.read()
 
+    @validate_call(validate_return=True)
     def download_artifacts(
         self,
         artifact_path: Optional[str] = None,
@@ -306,9 +318,10 @@ class COSModelRegistry(S3ArtifactRepository):
         # Recreate the model directory
         os.makedirs(model_dir, exist_ok=True)
 
+    @validate_call(config={"arbitrary_types_allowed": True}, validate_return=True)
     def load_model(
         self, model_local_path: Union[str, Path], **kwargs
-    ) -> mlflow.pyfunc.PythonModel:
+    ) -> mlflow.pyfunc.PyFuncModel:
         """
         Load the model from the specified local path.
 
@@ -329,6 +342,7 @@ class COSModelRegistry(S3ArtifactRepository):
         # Load the model using MLflow
         return mlflow.pyfunc.load_model(model_local_path, **kwargs)
 
+    @validate_call
     def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None):
         """
         Log the artifacts in the specified local directory to the configured IBM COS bucket.
