@@ -117,7 +117,10 @@ class COSModelRegistry(S3ArtifactRepository):
         )
 
     def log_pyfunc_model_as_code(
-        self, model_code_path: str, artifacts: Optional[Dict] = None, **kwargs
+        self,
+        model_code_path: Union[str, Path],
+        artifacts: Optional[Dict[str, Union[str, Path]]] = None,
+        **kwargs,
     ):
         """
         Log a MLFlow's Python model to the model registry as code.
@@ -125,7 +128,7 @@ class COSModelRegistry(S3ArtifactRepository):
         This method saves a PyFunc model using MLflow and then logs the model artifacts to storage.
 
         Args:
-            model_code_path (str): Path to the Python model code or a Python model class/instance
+            model_code_path (str | Path): Path to the Python model code or a Python model class/instance
                 that inherits from PythonModel.
             artifacts (Optional[Dict]): Dictionary of artifacts to be saved with the model.
                 Each artifact is logged as a separate file within the model directory.
@@ -135,6 +138,10 @@ class COSModelRegistry(S3ArtifactRepository):
             The model is temporarily saved to disk before being logged to the configured
             artifact storage system.
         """
+        if isinstance(model_code_path, Path):
+            model_code_path = str(model_code_path)
+        if artifacts:
+            artifacts = {k: str(v) for k, v in artifacts.items()}
         with TempDir() as tmp:
             local_path = tmp.path("model")
             mlflow.pyfunc.save_model(
@@ -145,6 +152,42 @@ class COSModelRegistry(S3ArtifactRepository):
             )
 
             self.log_artifacts(local_dir=local_path)
+
+    def _get_remote_fingerprint(self) -> str:
+        """
+        Retrieves the fingerprint of the model from remote storage.
+
+        Returns:
+            str: The decoded fingerprint string.
+
+        Raises:
+            FingerPrintNotFound: If the fingerprint couldn't be retrieved from remote storage.
+        """
+        try:
+            return (
+                self._get_s3_client()
+                .get_object(
+                    Bucket=self._bucket, Key=f"{self._key}/{self.FINGERPRINT_NAME}"
+                )["Body"]
+                .read()
+                .decode()
+            )
+        except ibm_boto3.exceptions.Boto3Error as e:
+            raise FingerPrintNotFound(FINGERPRINT_RETRIEVAL_ERROR.format(str(e)))
+
+    @staticmethod
+    def _get_local_fingerprint(fingerprint_path: str) -> str:
+        """
+        Retrieves the fingerprint from a local file.
+
+        Args:
+            fingerprint_path (str): Path to the fingerprint file.
+
+        Returns:
+            str: The contents of the fingerprint file.
+        """
+        with open(fingerprint_path, "r") as f:
+            return f.read()
 
     def download_artifacts(
         self,
@@ -204,21 +247,12 @@ class COSModelRegistry(S3ArtifactRepository):
             return super().download_artifacts(artifact_path="", dst_path=model_dir)
 
         # Read the fingerprint from the local file
-        with open(fingerprint_path, "r") as f:
-            local_fingerprint = f.read()
+        local_fingerprint = self._get_local_fingerprint(fingerprint_path)
 
         # Read the fingerprint from the remote file
-        try:
-            remote_fingerprint = (
-                self._get_s3_client()
-                .get_object(
-                    Bucket=self._bucket, Key=f"{self._key}/{self.FINGERPRINT_NAME}"
-                )["Body"]
-                .read()
-                .decode()
-            )
-        except ibm_boto3.exceptions.Boto3Error as e:
-            raise FingerPrintNotFound(FINGERPRINT_RETRIEVAL_ERROR.format(str(e)))
+
+        remote_fingerprint = self._get_remote_fingerprint()
+
         # If fingerprints match, return without downloading
         if local_fingerprint == remote_fingerprint:
             msg = f"Fingerprint matches. Artifacts already stored in {model_dir}"
@@ -272,6 +306,20 @@ class COSModelRegistry(S3ArtifactRepository):
         # Recreate the model directory
         os.makedirs(model_dir, exist_ok=True)
 
+    def load_model(self, model_local_path: str, **kwargs) -> mlflow.pyfunc.PythonModel:
+        """
+        Load the model from the specified local path.
+
+        Args:
+            model_local_path (str): Local path to the model directory.
+            **kwargs: Additional keyword arguments passed to mlflow.pyfunc.load_model().
+
+        Returns:
+            mlflow.pyfunc.PythonModel: The loaded MLflow Python model.
+        """
+        # Load the model using MLflow
+        return mlflow.pyfunc.load_model(model_local_path, **kwargs)
+
     def log_artifacts(self, local_dir: str, artifact_path: Optional[str] = None):
         """
         Log the artifacts in the specified local directory to the configured IBM COS bucket.
@@ -301,7 +349,7 @@ class COSModelRegistry(S3ArtifactRepository):
         ] and not self._key.endswith("latest"):
             raise ModelAlreadyExistsError(MODEL_ALREADY_EXISTS)
         self.clean_pycache_files(local_dir)
-        self.write_hash(local_dir)
+        self.write_hash(directory=local_dir)
         super().log_artifacts(local_dir)
         msg = f"Model {self._model_name} version {self._model_version} has been logged to the registry: {self.artifact_uri}"
         logger.info(msg)
