@@ -441,3 +441,43 @@ class COSModelRegistry(S3ArtifactRepository):
         # Write the hash to the fingerprint file
         with open(directory_path / cls.FINGERPRINT_NAME, "w") as f:
             f.write(hash_)
+
+    def delete_model_version(self, *, confirm: bool = False) -> None:
+        """
+        Remove the model version from the registry.
+
+        This method deletes the model version from the IBM Cloud Object Storage
+        bucket, including all associated artifacts and metadata.
+        It requires confirmation to prevent accidental deletions.
+
+        Args:
+            confirm (bool): If True, the model version will be deleted. If False,
+                a warning message will be printed and no action will be taken.
+                Defaults to False.
+                This is a safety feature to prevent accidental deletions.
+                Set confirm=True to proceed with the deletion.
+
+        Returns:
+            None
+        """
+        if not confirm:
+            msg = (
+                "This action will delete the model version from the registry. "
+                "Please confirm by setting confirm=True."
+            )
+            logger.warning(msg)
+            print_colored_message(color=Color.YELLOW, message=msg)
+            return
+        # Delete the model version from the registry
+        # using the S3 client
+        client = self._get_s3_client()
+        keys = [
+            dict(Key=i["Key"])
+            for i in client.list_objects(Bucket=self._bucket, Prefix=self._key)[
+                "Contents"
+            ]
+        ]
+        client.delete_objects(Bucket=self._bucket, Delete=dict(Objects=keys))
+        msg = f"Model version {self._model_version} has been removed from the registry."
+        logger.info(msg)
+        print_colored_message(color=Color.YELLOW, message=msg)

@@ -1,6 +1,7 @@
 from functools import partial
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, Generator
+from mlflow_ibmcos.exceptions import MODEL_ALREADY_EXISTS, ModelAlreadyExistsError
 from mlflow_ibmcos.model_registry import COSModelRegistry
 import pytest
 import os
@@ -10,8 +11,48 @@ FIXTURES_PATH = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
-def bucket_name():
-    return os.getenv("COS_BUCKET_NAME")
+def bucket_name() -> str:
+    return os.getenv("COS_BUCKET_NAME", "")
+
+
+@pytest.fixture
+def push_tagged_model(bucket_name: str) -> Generator[COSModelRegistry, Any, None]:
+    """
+    Creates a test tagged model and pushes it to the COS Model Registry.
+
+    This function serves as a test fixture that creates a COSModelRegistry instance,
+    logs a PyFunc model as code, and yields the registry for testing purposes.
+    After the test is complete, it cleans up by deleting the model version.
+
+    Parameters
+    ----------
+    bucket_name : str
+        The name of the COS bucket to use for the model registry.
+
+    Yields
+    ------
+    COSModelRegistry
+        A configured model registry instance with a test model pushed to it.
+
+    Notes
+    -----
+    This is designed to be used as a pytest fixture with cleanup handling.
+    """
+
+    # Create a test model and push it to the registry
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="test",
+        model_version="0.0.1",
+    )
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelcode.py",
+        artifacts={"model": FIXTURES_PATH / "model.pkl"},
+    )
+    yield registry
+
+    # Clean up the test model
+    registry.delete_model_version(confirm=True)
 
 
 @pytest.fixture
@@ -118,3 +159,25 @@ def test_model_registration_process(
         ]
     )
     assert prediction == ["5", "5"]
+
+
+def test_registering_model_which_already_exists(push_tagged_model: COSModelRegistry):
+    """
+    Test that attempting to register a tagged model that already exists raises ModelAlreadyExistsError.
+
+    This test verifies that the COSModelRegistry correctly raises a ModelAlreadyExistsError
+    when trying to log a PyFunc model that has already been registered. The test expects
+    the error message to match the predefined MODEL_ALREADY_EXISTS constant.
+
+    Args:
+        push_model (COSModelRegistry): A fixture providing a COSModelRegistry instance
+                                      with a model already registered.
+    """
+
+    with pytest.raises(
+        expected_exception=ModelAlreadyExistsError, match=MODEL_ALREADY_EXISTS
+    ):
+        push_tagged_model.log_pyfunc_model_as_code(
+            model_code_path=FIXTURES_PATH / "modelcode.py",
+            artifacts={"model": FIXTURES_PATH / "model.pkl"},
+        )
