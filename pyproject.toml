@@ -1,6 +1,6 @@
 [project]
 name = "mlflow-ibmcos"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Python library to integrate IBM COS with MLFlow artifact registry"
 readme = "README.md"
 authors = [
