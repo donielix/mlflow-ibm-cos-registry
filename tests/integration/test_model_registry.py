@@ -1,6 +1,6 @@
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Generator
+from typing import Any, Callable, Generator, List
 from mlflow_ibmcos.exceptions import MODEL_ALREADY_EXISTS, ModelAlreadyExistsError
 from mlflow_ibmcos.model_registry import COSModelRegistry
 import pytest
@@ -8,6 +8,33 @@ import os
 from pytest_mock import MockerFixture
 
 FIXTURES_PATH = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+def models_to_delete(request: pytest.FixtureRequest) -> Callable:
+    """
+    A fixture that provides a function to delete model versions.
+    The models will be deleted immediately when the function is called,
+    and a cleanup hook ensures all registered models are deleted when the test finishes.
+    """
+    models_to_delete: List[COSModelRegistry] = []
+
+    def wrapper(model: COSModelRegistry) -> None:
+        # Register the model for potential cleanup at the end of the test
+        models_to_delete.append(model)
+
+    def finalizer():
+        # Cleanup hook that runs when the test function finishes
+        for model in models_to_delete:
+            try:
+                model.delete_model_version(confirm=True)
+            except Exception:
+                # Ignore errors during cleanup - model might already be deleted
+                pass
+
+    request.addfinalizer(finalizer)
+
+    return wrapper
 
 
 @pytest.fixture
@@ -131,7 +158,7 @@ def test_model_registration_process(
         model_code_path=FIXTURES_PATH / "modelcode.py",
         artifacts={"model": FIXTURES_PATH / "model.pkl"},
     )
-    registry.artifact_uri
+    assert registry.artifact_uri == f"s3://{bucket_name}/{registry.PREFIX}/test/latest"
     remote_fingerprint = registry._get_remote_fingerprint()
     assert tmp_path.joinpath("fingerprint").read_text() == remote_fingerprint
 
@@ -147,6 +174,53 @@ def test_model_registration_process(
         tmp_path.joinpath("test/latest/MLmodel"),
         tmp_path.joinpath("test/latest/fingerprint"),
         tmp_path.joinpath("test/latest/artifacts"),
+    }
+    assert model_files == expected_files
+
+    model = registry.load_model(model_local_path=path)
+
+    prediction = model.predict(
+        [
+            {"text": "Hello"},
+            {"text": "World"},
+        ]
+    )
+    assert prediction == ["5", "5"]
+
+
+def test_model_registration_with_tagged_model_and_no_bucket(
+    mock_hash: Callable, models_to_delete, tmp_path: Path
+):
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        model_name="test",
+        model_version="0.0.0",
+    )
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelcode.py",
+        artifacts={"model": FIXTURES_PATH / "model.pkl"},
+    )
+    models_to_delete(registry)
+    assert (
+        registry.artifact_uri == f"s3://{registry._bucket}/{registry.PREFIX}/test/0.0.0"
+    )
+
+    remote_fingerprint = registry._get_remote_fingerprint()
+    assert tmp_path.joinpath("fingerprint").read_text() == remote_fingerprint
+
+    # Now download the model
+    path = registry.download_artifacts(dst_path=tmp_path)
+    model_files = set(Path(path).glob("**/*"))
+    expected_files = {
+        tmp_path.joinpath("test/0.0.0/modelcode.py"),
+        tmp_path.joinpath("test/0.0.0/python_env.yaml"),
+        tmp_path.joinpath("test/0.0.0/conda.yaml"),
+        tmp_path.joinpath("test/0.0.0/requirements.txt"),
+        tmp_path.joinpath("test/0.0.0/artifacts/model.pkl"),
+        tmp_path.joinpath("test/0.0.0/MLmodel"),
+        tmp_path.joinpath("test/0.0.0/fingerprint"),
+        tmp_path.joinpath("test/0.0.0/artifacts"),
     }
     assert model_files == expected_files
 

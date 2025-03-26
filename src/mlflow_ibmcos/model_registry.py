@@ -32,39 +32,50 @@ class COSModelRegistry(S3ArtifactRepository):
     It extends the S3ArtifactRepository to provide specific model registry capabilities
     including version management, fingerprinting, and proper artifact organization.
 
-    Class Attributes:
-        PREFIX (str): The base prefix for all models stored in the registry
-        FINGERPRINT_NAME (str): The name of the file used to store the model's hash fingerprint
-        FINGERPRINT_IGNORE (tuple): Files to be ignored when calculating the model fingerprint
-        FINGERPRINT_ALGORITHM (str): The algorithm used for calculating directory hashes
+    Class Attributes
+    ----------------
+    - `PREFIX` (str): The base prefix for all models stored in the registry
+    - `FINGERPRINT_NAME` (str): The name of the file used to store the model's hash fingerprint
+    - `FINGERPRINT_IGNORE` (tuple): Files to be ignored when calculating the model fingerprint
+    - `FINGERPRINT_ALGORITHM` (str): The algorithm used for calculating directory hashes
 
-    Instance Arguments:
-        bucket (str): The name of the IBM COS bucket to use for storage
-        model_name (str): The name of the model to be registered
-        model_version (str): The version identifier for the model. It can be a tagged version or 'latest'.
-        **kwargs: Additional keyword arguments for S3 client configuration
-            - endpoint_url (str): IBM COS service endpoint URL
-            - aws_access_key_id (str): Access key for IBM COS authentication
-            - aws_secret_access_key (str): Secret key for IBM COS authentication
-            - config: Additional configuration for the S3 client (e.g., proxy settings)
+    Instance Arguments
+    ------------------
+    `model_name` (str):
+        The name of the model to be registered
+    `model_version` (str):
+        The version identifier for the model. It can be a tagged version or 'latest'.
+    `bucket` (str):
+        The name of the IBM COS bucket to use for storage. If not provided,
+        it will be retrieved from the environment variable 'COS_BUCKET_NAME'.
+    `**kwargs`:
+        Additional keyword arguments for S3 client configuration:
+            - `endpoint_url` (str): IBM COS service endpoint URL
+            - `aws_access_key_id` (str): Access key for IBM COS authentication
+            - `aws_secret_access_key` (str): Secret key for IBM COS authentication
+            - `config`: Additional configuration for the S3 client (e.g., proxy settings)
 
-    Environment Variables:
-        AWS_ENDPOINT_URL: Can be used instead of the endpoint_url argument
-        AWS_ACCESS_KEY_ID: Can be used instead of the aws_access_key_id argument
-        AWS_SECRET_ACCESS_KEY: Can be used instead of the aws_secret_access_key argument
+    Environment Variables
+    ---------------------
+    - `AWS_ENDPOINT_URL`: Can be used instead of the endpoint_url argument
+    - `AWS_ACCESS_KEY_ID`: Can be used instead of the aws_access_key_id argument
+    - `AWS_SECRET_ACCESS_KEY`: Can be used instead of the aws_secret_access_key argument
+    - `COS_BUCKET_NAME`: Can be used instead of the bucket argument
 
-    Raises:
-        ArgumentRequired: If any required authentication parameters are missing
-        ModelAlreadyExistsError: When attempting to overwrite an existing model version
+    Raises
+    ------
+    - `ArgumentRequired`: If any required authentication parameters are missing
+    - `ModelAlreadyExistsError`: When attempting to overwrite an existing model version
 
-    Example:
+    Example
+    -------
         >>> registry = COSModelRegistry(
         ...     bucket="models-bucket",
         ...     model_name="text-classifier",
         ...     model_version="1.0.0",
         ...     endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud"
         ... )
-        >>> registry.log_artifacts("./model-dir")
+        >>> registry.log_artifacts("model-dir")
     """
 
     PREFIX = "traductor/registry"
@@ -75,15 +86,19 @@ class COSModelRegistry(S3ArtifactRepository):
     @validate_call
     def __init__(
         self,
-        bucket: str,
         model_name: str,
         model_version: str,
+        bucket: Optional[str] = None,
         prefix: Optional[str] = None,
         **kwargs,
     ):
-        self._bucket = bucket
         self._model_name = model_name
         self._model_version = model_version
+        self._bucket = (
+            bucket
+            or os.environ.get("COS_BUCKET_NAME")
+            or self._raise_missing_argument_error("bucket")
+        )
         self._key = f"{prefix if prefix else self.PREFIX}/{model_name}/{model_version}"
         self._endpoint_url = (
             kwargs.get("endpoint_url")

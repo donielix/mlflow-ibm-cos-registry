@@ -806,7 +806,6 @@ wheels = [
 
 [[package]]
 name = "mlflow-ibmcos"
-version = "0.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "cloudpickle" },
