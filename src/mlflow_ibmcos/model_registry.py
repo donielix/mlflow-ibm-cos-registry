@@ -5,6 +5,7 @@ from typing import Dict, Optional, Union
 from warnings import warn
 from mlflow.store.artifact.s3_artifact_repo import S3ArtifactRepository
 import ibm_boto3
+from ibm_botocore.config import Config
 from dirhash import dirhash
 from functools import lru_cache
 from mlflow.utils.file_utils import TempDir
@@ -53,7 +54,7 @@ class COSModelRegistry(S3ArtifactRepository):
             - `endpoint_url` (str): IBM COS service endpoint URL
             - `aws_access_key_id` (str): Access key for IBM COS authentication
             - `aws_secret_access_key` (str): Secret key for IBM COS authentication
-            - `config`: Additional configuration for the S3 client (e.g., proxy settings)
+            - `config`: A dict with additional configuration for the S3 client (e.g., proxy settings)
 
     Environment Variables
     ---------------------
@@ -115,7 +116,11 @@ class COSModelRegistry(S3ArtifactRepository):
             or os.environ.get("AWS_SECRET_ACCESS_KEY")
             or self._raise_missing_argument_error("aws_secret_access_key")
         )
-        self._config = kwargs.get("config")
+        self._config = (
+            Config(**kwargs.get("config"))
+            if kwargs.get("config") and isinstance(kwargs.get("config"), dict)
+            else None
+        )
         super().__init__(artifact_uri=f"s3://{self._bucket}/{self._key}")
 
     @lru_cache(maxsize=64)

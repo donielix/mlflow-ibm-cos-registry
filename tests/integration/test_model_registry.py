@@ -1,6 +1,6 @@
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Generator, List
+from typing import Any, Callable, Dict, Generator, List
 from mlflow_ibmcos.exceptions import MODEL_ALREADY_EXISTS, ModelAlreadyExistsError
 from mlflow_ibmcos.model_registry import COSModelRegistry
 import pytest
@@ -40,6 +40,18 @@ def models_to_delete(request: pytest.FixtureRequest) -> Callable:
 @pytest.fixture
 def bucket_name() -> str:
     return os.getenv("COS_BUCKET_NAME", "")
+
+
+@pytest.fixture
+def proxy() -> Dict[str, str]:
+    """
+    Fixture to provide proxy settings for the test environment.
+    This fixture retrieves the HTTP and HTTPS proxy settings from environment variables
+    """
+    return {
+        "http": os.getenv("HTTP_PROXY", ""),
+        "https": os.getenv("HTTPS_PROXY", ""),
+    }
 
 
 @pytest.fixture
@@ -255,3 +267,55 @@ def test_registering_model_which_already_exists(push_tagged_model: COSModelRegis
             model_code_path=FIXTURES_PATH / "modelcode.py",
             artifacts={"model": FIXTURES_PATH / "model.pkl"},
         )
+
+
+def test_model_registration_process_with_custom_config(
+    bucket_name: str, tmp_path: Path, proxy: Dict[str, str], mock_hash: Callable
+):
+    """
+    Test the custom configuration of the COSModelRegistry class.
+
+    This test verifies that the custom configuration is correctly applied
+    and that the model registry behaves as expected with the custom settings.
+    """
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="test",
+        model_version="latest",
+        config=dict(proxies=proxy),
+    )
+
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelcode.py",
+        artifacts={"model": FIXTURES_PATH / "model.pkl"},
+    )
+    assert registry.artifact_uri == f"s3://{bucket_name}/{registry.PREFIX}/test/latest"
+    remote_fingerprint = registry._get_remote_fingerprint()
+    assert tmp_path.joinpath("fingerprint").read_text() == remote_fingerprint
+
+    # Now download the model
+    path = registry.download_artifacts(dst_path=tmp_path)
+    model_files = set(Path(path).glob("**/*"))
+    expected_files = {
+        tmp_path.joinpath("test/latest/modelcode.py"),
+        tmp_path.joinpath("test/latest/python_env.yaml"),
+        tmp_path.joinpath("test/latest/conda.yaml"),
+        tmp_path.joinpath("test/latest/requirements.txt"),
+        tmp_path.joinpath("test/latest/artifacts/model.pkl"),
+        tmp_path.joinpath("test/latest/MLmodel"),
+        tmp_path.joinpath("test/latest/fingerprint"),
+        tmp_path.joinpath("test/latest/artifacts"),
+    }
+    assert model_files == expected_files
+
+    model = registry.load_model(model_local_path=path)
+
+    prediction = model.predict(
+        [
+            {"text": "Hello"},
+            {"text": "World"},
+        ]
+    )
+    assert prediction == ["5", "5"]
