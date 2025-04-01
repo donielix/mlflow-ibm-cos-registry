@@ -38,7 +38,7 @@ repos:
       - id: requirements-txt-fixer
       - id: name-tests-test
         args: [--pytest-test-first]
-        exclude: modelcode.py
+        exclude: modelascode
 
   - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
     rev: v2.14.0

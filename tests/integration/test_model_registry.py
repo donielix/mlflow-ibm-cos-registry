@@ -1,6 +1,9 @@
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Dict, Generator, List
+
+import mlflow
+import mlflow.exceptions
 from mlflow_ibmcos.exceptions import MODEL_ALREADY_EXISTS, ModelAlreadyExistsError
 from mlflow_ibmcos.model_registry import COSModelRegistry
 import pytest
@@ -85,8 +88,8 @@ def push_tagged_model(bucket_name: str) -> Generator[COSModelRegistry, Any, None
         model_version="0.0.1",
     )
     registry.log_pyfunc_model_as_code(
-        model_code_path=FIXTURES_PATH / "modelcode.py",
-        artifacts={"model": FIXTURES_PATH / "model.pkl"},
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelcode.py",
+        artifacts={"model": FIXTURES_PATH / "artifacts" / "model.pkl"},
     )
     yield registry
 
@@ -132,7 +135,7 @@ def mock_hash(mocker: MockerFixture):
 
 
 def test_model_registration_process(
-    bucket_name: str, mock_hash: Callable, tmp_path: Path
+    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
 ):
     """
     Test the end-to-end model registration process using COSModelRegistry.
@@ -166,9 +169,10 @@ def test_model_registration_process(
         model_name="test",
         model_version="latest",
     )
+    models_to_delete(registry)
     registry.log_pyfunc_model_as_code(
-        model_code_path=FIXTURES_PATH / "modelcode.py",
-        artifacts={"model": FIXTURES_PATH / "model.pkl"},
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelcode.py",
+        artifacts={"model": FIXTURES_PATH / "artifacts" / "model.pkl"},
     )
     assert registry.artifact_uri == f"s3://{bucket_name}/{registry.PREFIX}/test/latest"
     remote_fingerprint = registry._get_remote_fingerprint()
@@ -201,7 +205,7 @@ def test_model_registration_process(
 
 
 def test_model_registration_with_tagged_model_and_no_bucket(
-    mock_hash: Callable, models_to_delete, tmp_path: Path
+    mock_hash: Callable, models_to_delete: Callable, tmp_path: Path
 ):
     mock_hash(tmp_path)
 
@@ -210,8 +214,8 @@ def test_model_registration_with_tagged_model_and_no_bucket(
         model_version="0.0.0",
     )
     registry.log_pyfunc_model_as_code(
-        model_code_path=FIXTURES_PATH / "modelcode.py",
-        artifacts={"model": FIXTURES_PATH / "model.pkl"},
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelcode.py",
+        artifacts={"model": FIXTURES_PATH / "artifacts" / "model.pkl"},
     )
     models_to_delete(registry)
     assert (
@@ -264,13 +268,17 @@ def test_registering_model_which_already_exists(push_tagged_model: COSModelRegis
         expected_exception=ModelAlreadyExistsError, match=MODEL_ALREADY_EXISTS
     ):
         push_tagged_model.log_pyfunc_model_as_code(
-            model_code_path=FIXTURES_PATH / "modelcode.py",
-            artifacts={"model": FIXTURES_PATH / "model.pkl"},
+            model_code_path=FIXTURES_PATH / "modelascode" / "modelcode.py",
+            artifacts={"model": FIXTURES_PATH / "artifacts" / "model.pkl"},
         )
 
 
 def test_model_registration_process_with_custom_config(
-    bucket_name: str, tmp_path: Path, proxy: Dict[str, str], mock_hash: Callable
+    bucket_name: str,
+    tmp_path: Path,
+    proxy: Dict[str, str],
+    mock_hash: Callable,
+    models_to_delete: Callable,
 ):
     """
     Test the custom configuration of the COSModelRegistry class.
@@ -286,10 +294,10 @@ def test_model_registration_process_with_custom_config(
         model_version="latest",
         config=dict(proxies=proxy),
     )
-
+    models_to_delete(registry)
     registry.log_pyfunc_model_as_code(
-        model_code_path=FIXTURES_PATH / "modelcode.py",
-        artifacts={"model": FIXTURES_PATH / "model.pkl"},
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelcode.py",
+        artifacts={"model": FIXTURES_PATH / "artifacts" / "model.pkl"},
     )
     assert registry.artifact_uri == f"s3://{bucket_name}/{registry.PREFIX}/test/latest"
     remote_fingerprint = registry._get_remote_fingerprint()
@@ -319,3 +327,162 @@ def test_model_registration_process_with_custom_config(
         ]
     )
     assert prediction == ["5", "5"]
+
+
+def test_model_registration_process_with_params(
+    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
+):
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="testwithparams",
+        model_version="latest",
+    )
+    models_to_delete(registry)
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelcodewithparams.py",
+        artifacts={"model": FIXTURES_PATH / "artifacts" / "modelwithparams.pkl"},
+        input_example=(
+            ["hello", "world"],
+            {
+                "capitalize_only_first": True,
+                "add_prefix": "prefix_",
+            },
+        ),
+    )
+    assert (
+        registry.artifact_uri
+        == f"s3://{bucket_name}/{registry.PREFIX}/testwithparams/latest"
+    )
+    remote_fingerprint = registry._get_remote_fingerprint()
+    assert tmp_path.joinpath("fingerprint").read_text() == remote_fingerprint
+
+    # Now download the model
+    path = registry.download_artifacts(dst_path=tmp_path)
+    model_files = set(Path(path).glob("**/*"))
+    expected_files = {
+        tmp_path.joinpath("testwithparams/latest/modelcodewithparams.py"),
+        tmp_path.joinpath("testwithparams/latest/python_env.yaml"),
+        tmp_path.joinpath("testwithparams/latest/conda.yaml"),
+        tmp_path.joinpath("testwithparams/latest/requirements.txt"),
+        tmp_path.joinpath("testwithparams/latest/artifacts/modelwithparams.pkl"),
+        tmp_path.joinpath("testwithparams/latest/MLmodel"),
+        tmp_path.joinpath("testwithparams/latest/fingerprint"),
+        tmp_path.joinpath("testwithparams/latest/artifacts"),
+        tmp_path.joinpath("testwithparams/latest/serving_input_example.json"),
+        tmp_path.joinpath("testwithparams/latest/input_example.json"),
+    }
+    assert model_files == expected_files
+
+    model = registry.load_model(model_local_path=path)
+
+    prediction = model.predict(
+        ["hi", "there"],
+        params={
+            "capitalize_only_first": False,
+            "add_prefix": "prefix_",
+        },
+    )
+    assert prediction == ["prefix_HI", "prefix_THERE"]
+
+    # If we don't pass the params, it should use the default values
+    # which are: capitalize_only_first=True, add_prefix="prefix_"
+    prediction = model.predict(
+        ["hi", "there"],
+    )
+    assert prediction == ["prefix_Hi", "prefix_There"]
+
+    # If we juts pass the capitalize_only_first param, it should use the default value for add_prefix
+    # which is: add_prefix="prefix_"
+    prediction = model.predict(
+        ["hi", "there"],
+        params={
+            "capitalize_only_first": False,
+        },
+    )
+    assert prediction == ["prefix_HI", "prefix_THERE"]
+
+
+def test_model_registration_process_with_none_params(
+    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
+):
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="testwithparams",
+        model_version="latest",
+    )
+    models_to_delete(registry)
+    with pytest.raises(expected_exception=mlflow.exceptions.MlflowException):
+        registry.log_pyfunc_model_as_code(
+            model_code_path=FIXTURES_PATH / "modelascode" / "modelcodewithparams.py",
+            artifacts={"model": FIXTURES_PATH / "artifacts" / "modelwithparams.pkl"},
+            input_example=(
+                ["hello", "world"],
+                {
+                    "capitalize_only_first": True,
+                    "add_prefix": None,
+                },
+            ),
+        )
+    assert (
+        registry.artifact_uri
+        == f"s3://{bucket_name}/{registry.PREFIX}/testwithparams/latest"
+    )
+
+
+def test_model_registration_process_without_required_params(
+    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
+):
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="testwithparams",
+        model_version="latest",
+    )
+    models_to_delete(registry)
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelcodewithparams.py",
+        artifacts={"model": FIXTURES_PATH / "artifacts" / "modelwithparams.pkl"},
+        input_example=["hello", "world"],
+    )
+    assert (
+        registry.artifact_uri
+        == f"s3://{bucket_name}/{registry.PREFIX}/testwithparams/latest"
+    )
+    assert (
+        registry.artifact_uri
+        == f"s3://{bucket_name}/{registry.PREFIX}/testwithparams/latest"
+    )
+    remote_fingerprint = registry._get_remote_fingerprint()
+    assert tmp_path.joinpath("fingerprint").read_text() == remote_fingerprint
+
+    # Now download the model
+    path = registry.download_artifacts(dst_path=tmp_path)
+    model_files = set(Path(path).glob("**/*"))
+    expected_files = {
+        tmp_path.joinpath("testwithparams/latest/modelcodewithparams.py"),
+        tmp_path.joinpath("testwithparams/latest/python_env.yaml"),
+        tmp_path.joinpath("testwithparams/latest/conda.yaml"),
+        tmp_path.joinpath("testwithparams/latest/requirements.txt"),
+        tmp_path.joinpath("testwithparams/latest/artifacts/modelwithparams.pkl"),
+        tmp_path.joinpath("testwithparams/latest/MLmodel"),
+        tmp_path.joinpath("testwithparams/latest/fingerprint"),
+        tmp_path.joinpath("testwithparams/latest/artifacts"),
+        tmp_path.joinpath("testwithparams/latest/serving_input_example.json"),
+        tmp_path.joinpath("testwithparams/latest/input_example.json"),
+    }
+    assert model_files == expected_files
+
+    model = registry.load_model(model_local_path=path)
+    with pytest.raises(expected_exception=KeyError):
+        model.predict(
+            ["hi", "there"],
+            params={
+                "capitalize_only_first": False,
+                "add_prefix": "prefix_",
+            },
+        )
