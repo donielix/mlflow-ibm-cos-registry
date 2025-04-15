@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Generator, List
 
 import mlflow
 import mlflow.exceptions
+from pydantic import ValidationError
 from mlflow_ibmcos.exceptions import MODEL_ALREADY_EXISTS, ModelAlreadyExistsError
 from mlflow_ibmcos.model_registry import COSModelRegistry
 import pytest
@@ -485,4 +486,31 @@ def test_model_registration_process_without_required_params(
                 "capitalize_only_first": False,
                 "add_prefix": "prefix_",
             },
+        )
+
+
+def test_model_registration_wrong_artifacts_path(
+    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
+):
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="testnoartifacts",
+        model_version="latest",
+    )
+    models_to_delete(registry)
+    with pytest.raises(
+        expected_exception=ValidationError, match="Path fakepath does not exist"
+    ):
+        registry.log_pyfunc_model_as_code(
+            model_code_path=FIXTURES_PATH / "modelascode" / "modelcodewithparams.py",
+            artifacts={"model": "fakepath"},
+            input_example=(
+                ["hello", "world"],
+                {
+                    "capitalize_only_first": True,
+                    "add_prefix": None,
+                },
+            ),
         )

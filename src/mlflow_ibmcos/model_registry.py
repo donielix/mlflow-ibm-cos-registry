@@ -20,6 +20,7 @@ from mlflow_ibmcos.exceptions import (
 )
 import mlflow
 from mlflow_ibmcos.logger import Logger
+from mlflow_ibmcos.schemas import ModelPath
 from mlflow_ibmcos.utils import Color, print_colored_message
 
 logger = Logger(module=__name__)
@@ -148,8 +149,8 @@ class COSModelRegistry(S3ArtifactRepository):
     @validate_call
     def log_pyfunc_model_as_code(
         self,
-        model_code_path: Union[str, Path],
-        artifacts: Optional[Dict[str, Union[str, Path]]] = None,
+        model_code_path: ModelPath,
+        artifacts: Optional[Dict[str, ModelPath]] = None,
         **kwargs,
     ):
         """
@@ -158,8 +159,7 @@ class COSModelRegistry(S3ArtifactRepository):
         This method saves a PyFunc model using MLflow and then logs the model artifacts to storage.
 
         Args:
-            model_code_path (str | Path): Path to the Python model code or a Python model class/instance
-                that inherits from PythonModel.
+            model_code_path (str | Path): Path to the Python model code. It must exist.
             artifacts (Optional[Dict]): Dictionary of artifacts to be saved with the model.
                 Each artifact is logged as a separate file within the model directory.
             **kwargs: Additional keyword arguments passed to mlflow.pyfunc.save_model().
@@ -168,10 +168,7 @@ class COSModelRegistry(S3ArtifactRepository):
             The model is temporarily saved to disk before being logged to the configured
             artifact storage system.
         """
-        if isinstance(model_code_path, Path):
-            model_code_path = str(model_code_path)
-        if artifacts:
-            artifacts = {k: str(v) for k, v in artifacts.items()}
+
         with TempDir() as tmp:
             local_path = tmp.path("model")
             mlflow.pyfunc.save_model(
