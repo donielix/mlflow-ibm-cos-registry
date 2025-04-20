@@ -4,7 +4,11 @@ from typing import Any, Callable, Dict, Generator
 import mlflow
 import mlflow.exceptions
 from pydantic import ValidationError
-from mlflow_ibmcos.exceptions import MODEL_ALREADY_EXISTS, ModelAlreadyExistsError
+from mlflow_ibmcos.exceptions import (
+    MODEL_ALREADY_EXISTS,
+    ArgumentRequired,
+    ModelAlreadyExistsError,
+)
 from mlflow_ibmcos.model_registry import COSModelRegistry
 import pytest
 
@@ -423,10 +427,8 @@ def test_model_registration_process_without_required_params(
 
 
 def test_model_registration_wrong_artifacts_path(
-    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
+    bucket_name: str, models_to_delete: Callable
 ):
-    mock_hash(tmp_path)
-
     registry = COSModelRegistry(
         bucket=bucket_name,
         model_name="testnoartifacts",
@@ -446,4 +448,35 @@ def test_model_registration_wrong_artifacts_path(
                     "add_prefix": None,
                 },
             ),
+        )
+
+
+def test_model_registration_with_no_bucket(mock_clear_env):
+    with pytest.raises(expected_exception=ArgumentRequired, match="bucket"):
+        COSModelRegistry(
+            model_name="test",
+            model_version="latest",
+        )
+    with pytest.raises(expected_exception=ArgumentRequired, match="endpoint_url"):
+        COSModelRegistry(
+            bucket="fakebucket",
+            model_name="test",
+            model_version="latest",
+        )
+    with pytest.raises(expected_exception=ArgumentRequired, match="aws_access_key_id"):
+        COSModelRegistry(
+            bucket="fakebucket",
+            model_name="test",
+            model_version="latest",
+            endpoint_url="fakeendpoint",
+        )
+    with pytest.raises(
+        expected_exception=ArgumentRequired, match="aws_secret_access_key"
+    ):
+        COSModelRegistry(
+            bucket="fakebucket",
+            model_name="test",
+            model_version="latest",
+            endpoint_url="fakeendpoint",
+            aws_access_key_id="fakekey",
         )

@@ -87,3 +87,8 @@ def mock_hash(mocker: MockerFixture):
         )
 
     return wrapper
+
+
+@pytest.fixture
+def mock_clear_env(mocker: MockerFixture):
+    mocker.patch.dict(os.environ, clear=True)

@@ -47,11 +47,11 @@ class COSModelRegistry(S3ArtifactRepository):
         The name of the model to be registered
     `model_version` (str):
         The version identifier for the model. It can be a tagged version or 'latest'.
-    `bucket` (str):
-        The name of the IBM COS bucket to use for storage. If not provided,
-        it will be retrieved from the environment variable 'COS_BUCKET_NAME'.
+    `prefix` (Optional[str]):
+        The prefix within the bucket where models will be stored. Defaults to `traductor/registry`.
     `**kwargs`:
         Additional keyword arguments for S3 client configuration:
+            - `bucket` (str): The name of the IBM COS bucket to use for storage.
             - `endpoint_url` (str): IBM COS service endpoint URL
             - `aws_access_key_id` (str): Access key for IBM COS authentication
             - `aws_secret_access_key` (str): Secret key for IBM COS authentication
@@ -59,22 +59,22 @@ class COSModelRegistry(S3ArtifactRepository):
 
     Environment Variables
     ---------------------
-    - `AWS_ENDPOINT_URL`: Can be used instead of the endpoint_url argument
-    - `AWS_ACCESS_KEY_ID`: Can be used instead of the aws_access_key_id argument
-    - `AWS_SECRET_ACCESS_KEY`: Can be used instead of the aws_secret_access_key argument
-    - `COS_BUCKET_NAME`: Can be used instead of the bucket argument
+    - `COS_BUCKET_NAME`: Can be used instead of the `bucket` kwarg.
+    - `AWS_ENDPOINT_URL`: Can be used instead of the `endpoint_url` kwarg.
+    - `AWS_ACCESS_KEY_ID`: Can be used instead of the `aws_access_key_id` kwarg.
+    - `AWS_SECRET_ACCESS_KEY`: Can be used instead of the `aws_secret_access_key` kwarg.
 
     Raises
     ------
-    - `ArgumentRequired`: If any required authentication parameters are missing
+    - `ArgumentRequired`: If any required authentication or configuration parameters are missing
     - `ModelAlreadyExistsError`: When attempting to overwrite an existing model version
 
     Example
     -------
         >>> registry = COSModelRegistry(
-        ...     bucket="models-bucket",
         ...     model_name="text-classifier",
         ...     model_version="1.0.0",
+        ...     bucket="models-bucket",
         ...     endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud"
         ... )
         >>> registry.log_artifacts("model-dir")
@@ -90,14 +90,13 @@ class COSModelRegistry(S3ArtifactRepository):
         self,
         model_name: str,
         model_version: str,
-        bucket: Optional[str] = None,
         prefix: Optional[str] = None,
         **kwargs,
     ):
         self._model_name = model_name
         self._model_version = model_version
         self._bucket = (
-            bucket
+            kwargs.get("bucket")
             or os.environ.get("COS_BUCKET_NAME")
             or self._raise_missing_argument_error("bucket")
         )
@@ -204,6 +203,7 @@ class COSModelRegistry(S3ArtifactRepository):
             raise FingerPrintNotFound(FINGERPRINT_RETRIEVAL_ERROR.format(str(e)))
 
     @staticmethod
+    @validate_call
     def _get_local_fingerprint(fingerprint_path: str) -> str:
         """
         Retrieves the fingerprint from a local file.
@@ -326,9 +326,9 @@ class COSModelRegistry(S3ArtifactRepository):
             return os.path.abspath(model_dir)
 
         # ==== For 'latest' version ====
-        # Remove the existing model directory
+        # Remove the existing model directory (model_name + version)
         shutil.rmtree(model_dir, ignore_errors=True)
-        # Recreate the model directory
+        # Recreate the model directory (model_name + version)
         os.makedirs(model_dir, exist_ok=True)
         if delete_other_versions is True:
             # Delete any existing model version with the same name
@@ -337,6 +337,7 @@ class COSModelRegistry(S3ArtifactRepository):
         return super().download_artifacts(artifact_path="", dst_path=model_dir)
 
     @staticmethod
+    @validate_call
     def _delete_old_model_versions(model_dir: str) -> None:
         """
         Deletes old model versions by removing the parent directory and recreating the model directory.
@@ -428,6 +429,7 @@ class COSModelRegistry(S3ArtifactRepository):
         )
 
     @staticmethod
+    @validate_call
     def _raise_missing_argument_error(argument_name: str):
         """
         Raises an exception when a required argument is missing.
@@ -441,6 +443,7 @@ class COSModelRegistry(S3ArtifactRepository):
         raise ArgumentRequired(COS_ARGUMENT_REQUIRED.format(argument_name))
 
     @staticmethod
+    @validate_call
     def clean_pycache_files(local_path: str) -> None:
         """
         Recursively removes all '__pycache__' directories under the specified path.
@@ -462,8 +465,10 @@ class COSModelRegistry(S3ArtifactRepository):
             shutil.rmtree(pycache, ignore_errors=True)
 
     @classmethod
-    def write_hash(cls, directory: str):
-        """Computes and writes a hash fingerprint of the specified directory.
+    @validate_call
+    def write_hash(cls, directory: str) -> None:
+        """
+        Computes and writes a hash fingerprint of the specified directory.
 
         This method generates a hash of the directory contents using the configured
         hashing algorithm, while ignoring specified files and the fingerprint file itself.
@@ -488,9 +493,10 @@ class COSModelRegistry(S3ArtifactRepository):
         with open(directory_path / cls.FINGERPRINT_NAME, "w") as f:
             f.write(hash_)
 
+    @validate_call
     def delete_model_version(self, *, confirm: bool = False) -> None:
         """
-        Remove the model version from the registry.
+        Remove the model version from the remote registry.
 
         This method deletes the model version from the IBM Cloud Object Storage
         bucket, including all associated artifacts and metadata.
@@ -501,7 +507,7 @@ class COSModelRegistry(S3ArtifactRepository):
                 a warning message will be printed and no action will be taken.
                 Defaults to False.
                 This is a safety feature to prevent accidental deletions.
-                Set confirm=True to proceed with the deletion.
+                Set explicitly confirm=True to proceed with the deletion.
 
         Returns:
             None
@@ -509,7 +515,7 @@ class COSModelRegistry(S3ArtifactRepository):
         if not confirm:
             msg = (
                 "This action will delete the model version from the registry. "
-                "Please confirm by setting confirm=True."
+                "If you want to proceed, please set confirm=True when calling this method."
             )
             logger.warning(msg)
             print_colored_message(color=Color.YELLOW, message=msg)
