@@ -217,6 +217,35 @@ class COSModelRegistry(S3ArtifactRepository):
         with open(fingerprint_path, "r") as f:
             return f.read()
 
+    @validate_call(config={"arbitrary_types_allowed": True}, validate_return=True)
+    def load_remote_model(
+        self,
+        dst_path: Optional[Union[str, Path]] = None,
+        delete_other_versions: bool = False,
+    ) -> mlflow.pyfunc.PyFuncModel:
+        """
+        Load the model from remote storage to a local directory.
+
+        This method downloads the model artifacts from the configured IBM COS bucket
+        to a local directory. It uses fingerprint-based caching to avoid redundant downloads.
+        Then, it loads the model using MLflow's load_model() method.
+
+        Args:
+            dst_path (Optional[str | Path]): Destination directory where artifacts should be
+                downloaded. Defaults to current working directory if None.
+            delete_other_versions (bool): If True, deletes any existing model directory
+                with the same name before downloading. Defaults to False.
+
+        Returns:
+            str: Path to the directory containing the downloaded model artifacts.
+        """
+        path = self.download_artifacts(
+            dst_path=dst_path, delete_other_versions=delete_other_versions
+        )
+        # Load the model using MLflow
+        model = self.load_model(model_local_path=path)
+        return model
+
     @validate_call(validate_return=True)
     def download_artifacts(
         self,
@@ -252,9 +281,9 @@ class COSModelRegistry(S3ArtifactRepository):
         # TODO use E-Tag instead of fingerprint, so that the flow becomes more robust
         if isinstance(dst_path, Path):
             dst_path = str(dst_path)
-        # if no destination path is provided, set to current working directory
+        # if no destination path is provided, set to .models/ folder in current working directory
         if not dst_path:
-            dst_path = os.getcwd()
+            dst_path = os.path.join(os.getcwd(), ".models")
         # Create the destination directory if it doesn't exist
         os.makedirs(dst_path, exist_ok=True)
 
