@@ -35,12 +35,12 @@ def models_to_delete(request: pytest.FixtureRequest) -> Callable:
     return wrapper
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def bucket_name() -> str:
     return os.getenv("COS_BUCKET_NAME", "")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def proxy() -> Dict[str, str]:
     """
     Fixture to provide proxy settings for the test environment.

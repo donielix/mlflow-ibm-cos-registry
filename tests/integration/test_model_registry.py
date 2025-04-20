@@ -15,7 +15,7 @@ import pytest
 FIXTURES_PATH = Path(__file__).parent / "fixtures"
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def push_tagged_model(bucket_name: str) -> Generator[COSModelRegistry, Any, None]:
     """
     Creates a test tagged model and pushes it to the COS Model Registry.
@@ -198,10 +198,7 @@ def test_model_load_from_remote(
     tmp_path: Path,
     push_tagged_model: COSModelRegistry,
 ):
-    model = push_tagged_model.load_remote_model(
-        dst_path=tmp_path,
-        delete_other_versions=True,
-    )
+    model = push_tagged_model.load_remote_model(dst_path=tmp_path)
     predictions = model.predict(
         [
             {"text": "Hello"},
@@ -527,3 +524,135 @@ def test_model_registration_moving_artifacts(
         ]
     )
     assert predictions == ["5", "5"]
+
+
+def test_model_registration_multiple_artifacts(
+    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
+):
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="test",
+        model_version="latest",
+    )
+    models_to_delete(registry)
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelandtokenizer.py",
+        artifacts={
+            "model": FIXTURES_PATH / "artifacts" / "modelwithtokenizer" / "model",
+            "tokenizer": FIXTURES_PATH
+            / "artifacts"
+            / "modelwithtokenizer"
+            / "tokenizer",
+        },
+        input_example=(["yo sabes", "el y ella"], dict(lower=True)),
+    )
+    assert registry.artifact_uri == f"s3://{bucket_name}/{registry.PREFIX}/test/latest"
+    remote_fingerprint = registry._get_remote_fingerprint()
+    assert tmp_path.joinpath("fingerprint").read_text() == remote_fingerprint
+
+    # Now download the model
+    path = registry.download_artifacts(dst_path=tmp_path)
+    model_files = set(Path(path).glob("**/*"))
+    expected_files = {
+        tmp_path.joinpath("test/latest/modelandtokenizer.py"),
+        tmp_path.joinpath("test/latest/python_env.yaml"),
+        tmp_path.joinpath("test/latest/conda.yaml"),
+        tmp_path.joinpath("test/latest/requirements.txt"),
+        tmp_path.joinpath("test/latest/artifacts/model/model.pkl"),
+        tmp_path.joinpath("test/latest/artifacts/tokenizer/tokenizer.pkl"),
+        tmp_path.joinpath("test/latest/MLmodel"),
+        tmp_path.joinpath("test/latest/fingerprint"),
+        tmp_path.joinpath("test/latest/artifacts"),
+        tmp_path.joinpath("test/latest/artifacts/model"),
+        tmp_path.joinpath("test/latest/artifacts/tokenizer"),
+        tmp_path.joinpath("test/latest/serving_input_example.json"),
+        tmp_path.joinpath("test/latest/input_example.json"),
+    }
+    assert model_files == expected_files
+
+    model = registry.load_model(model_local_path=path)
+
+    prediction_lowering = model.predict(
+        [
+            "Yo sabes",
+            "El y Ella",
+        ],
+        params={
+            "lower": True,
+        },
+    )
+    assert prediction_lowering == [1, 2]
+    prediction_no_lowering = model.predict(
+        [
+            "Yo sabes",
+            "El y Ella",
+        ],
+        params={
+            "lower": False,
+        },
+    )
+    assert prediction_no_lowering == [0, 0]
+
+
+def test_model_registration_multiple_artifacts_with_moving(
+    bucket_name: str, mock_hash: Callable, tmp_path: Path, models_to_delete: Callable
+):
+    mock_hash(tmp_path)
+
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="test",
+        model_version="latest",
+    )
+    models_to_delete(registry)
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelandtokenizer.py",
+        artifacts={
+            "model": FIXTURES_PATH / "artifacts" / "modelwithtokenizer" / "model",
+            "tokenizer": FIXTURES_PATH
+            / "artifacts"
+            / "modelwithtokenizer"
+            / "tokenizer",
+        },
+        input_example=(["yo sabes", "el y ella"], dict(lower=True)),
+    )
+    assert registry.artifact_uri == f"s3://{bucket_name}/{registry.PREFIX}/test/latest"
+    remote_fingerprint = registry._get_remote_fingerprint()
+    assert tmp_path.joinpath("fingerprint").read_text() == remote_fingerprint
+
+    # Now download the model
+    path = registry.download_artifacts(
+        dst_path=tmp_path,
+        move_artifacts=dict(
+            tokenizer=str(tmp_path / "tokenizer_subpath" / "tokenizer")
+        ),
+    )
+    model_files = set(Path(path).glob("**/*"))
+    expected_files = {
+        tmp_path.joinpath("test/latest/modelandtokenizer.py"),
+        tmp_path.joinpath("test/latest/python_env.yaml"),
+        tmp_path.joinpath("test/latest/conda.yaml"),
+        tmp_path.joinpath("test/latest/requirements.txt"),
+        tmp_path.joinpath("test/latest/artifacts/model/model.pkl"),
+        tmp_path.joinpath("test/latest/MLmodel"),
+        tmp_path.joinpath("test/latest/fingerprint"),
+        tmp_path.joinpath("test/latest/artifacts"),
+        tmp_path.joinpath("test/latest/artifacts/model"),
+        tmp_path.joinpath("test/latest/serving_input_example.json"),
+        tmp_path.joinpath("test/latest/input_example.json"),
+    }
+    assert model_files == expected_files
+
+    model = registry.load_model(model_local_path=path)
+    prediction_lowering = model.predict(
+        [
+            "Yo sabes",
+            "El y Ella",
+        ],
+        params={
+            "lower": True,
+        },
+    )
+    assert prediction_lowering == [1, 2]

@@ -269,6 +269,8 @@ class COSModelRegistry(S3ArtifactRepository):
                 downloaded. Defaults to current working directory if None.
             delete_other_versions (bool): If True, deletes any existing model directory
                 with the same name before downloading. Defaults to False.
+            move_artifacts (Optional[NonEmptyDict]): Dictionary of artifacts to be moved
+                to a final location after download.
         Returns:
             str: Path to the directory containing the downloaded model artifacts.
         Raises:
