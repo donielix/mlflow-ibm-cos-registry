@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, Generator
 import mlflow
 import mlflow.exceptions
 from pydantic import ValidationError
-from mlflow_ibmcos.exceptions import (
+from mlflow_ibmcos.core.exceptions import (
     MODEL_ALREADY_EXISTS,
     ArgumentRequired,
     ModelAlreadyExistsError,
@@ -480,3 +480,50 @@ def test_model_registration_with_no_bucket(mock_clear_env):
             endpoint_url="fakeendpoint",
             aws_access_key_id="fakekey",
         )
+
+
+def test_model_registration_moving_artifacts(
+    push_tagged_model: COSModelRegistry, tmp_path: Path
+):
+    """
+    Test the model registration process with moving artifacts.
+
+    This test verifies that the model artifacts are moved to the correct location
+    after the model is registered. It checks that the artifacts are no longer in
+    the original location and are present in the new location.
+
+    Args:
+        push_tagged_model (COSModelRegistry): A fixture providing a COSModelRegistry instance
+                                              with a model already registered.
+    """
+
+    path = push_tagged_model.download_artifacts(
+        dst_path=tmp_path, move_artifacts=dict(model=str(tmp_path / "new_model.pkl"))
+    )
+    assert set(Path(path).joinpath("artifacts").glob("**/*")) == set()
+    assert Path(tmp_path).joinpath("new_model.pkl").exists()
+    model = push_tagged_model.load_model(path)
+    predictions = model.predict(
+        [
+            {"text": "Hello"},
+            {"text": "World"},
+        ]
+    )
+    assert predictions == ["5", "5"]
+    # Now, we download the model again to the same path
+    # and check that the artifacts are not moved again
+    # and the model is still in the new location
+    path = push_tagged_model.download_artifacts(
+        dst_path=tmp_path, move_artifacts=dict(model=str(tmp_path / "new_model.pkl"))
+    )
+    assert set(Path(path).joinpath("artifacts").glob("**/*")) == set()
+    assert Path(tmp_path).joinpath("new_model.pkl").exists()
+    # Load the model again and check that the predictions are still the same
+    model = push_tagged_model.load_model(path)
+    predictions = model.predict(
+        [
+            {"text": "Hello"},
+            {"text": "World"},
+        ]
+    )
+    assert predictions == ["5", "5"]

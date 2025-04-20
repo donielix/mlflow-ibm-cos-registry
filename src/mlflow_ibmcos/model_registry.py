@@ -10,7 +10,8 @@ from dirhash import dirhash
 from functools import lru_cache
 from mlflow.utils.file_utils import TempDir
 from pydantic import validate_call
-from mlflow_ibmcos.exceptions import (
+from mlflow_ibmcos.core.decorators import move_artifacts_hook
+from mlflow_ibmcos.core.exceptions import (
     COS_ARGUMENT_REQUIRED,
     FINGERPRINT_RETRIEVAL_ERROR,
     MODEL_ALREADY_EXISTS,
@@ -20,7 +21,7 @@ from mlflow_ibmcos.exceptions import (
 )
 import mlflow
 from mlflow_ibmcos.logger import Logger
-from mlflow_ibmcos.schemas import ModelPath
+from mlflow_ibmcos.schemas import ModelPath, NonEmptyDict
 from mlflow_ibmcos.utils import Color, print_colored_message
 
 logger = Logger(module=__name__)
@@ -246,12 +247,13 @@ class COSModelRegistry(S3ArtifactRepository):
         model = self.load_model(model_local_path=path)
         return model
 
-    @validate_call(validate_return=True)
+    @move_artifacts_hook
     def download_artifacts(
         self,
         artifact_path: Optional[str] = None,
         dst_path: Optional[Union[str, Path]] = None,
         delete_other_versions: bool = False,
+        move_artifacts: Optional[NonEmptyDict] = None,
     ) -> str:
         """
         Download model artifacts from remote storage to a local directory.

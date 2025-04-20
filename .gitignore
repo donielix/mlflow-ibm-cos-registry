@@ -7,3 +7,4 @@
 **/*.whl
 **/mlruns/
 **/.coverage
+**/.models/

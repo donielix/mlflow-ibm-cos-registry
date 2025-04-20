@@ -1,7 +1,7 @@
-from typing import Union
+from typing import Dict, Union
 from typing_extensions import Annotated
 from pathlib import Path
-from pydantic import AfterValidator
+from pydantic import AfterValidator, Field
 
 
 def validate_model_path(v: Union[str, Path]) -> str:
@@ -11,4 +11,6 @@ def validate_model_path(v: Union[str, Path]) -> str:
     return str(path_obj.resolve())
 
 
+NonEmptyStr = Annotated[str, Field(min_length=1)]
 ModelPath = Annotated[Union[str, Path], AfterValidator(validate_model_path)]
+NonEmptyDict = Annotated[Dict[NonEmptyStr, NonEmptyStr], Field(min_length=1)]
