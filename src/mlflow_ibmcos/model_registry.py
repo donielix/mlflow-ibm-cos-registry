@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import shutil
@@ -151,6 +152,7 @@ class COSModelRegistry(S3ArtifactRepository):
         self,
         model_code_path: ModelPath,
         artifacts: Optional[Dict[str, ModelPath]] = None,
+        local_path_storage: Optional[Union[str, Path]] = None,
         **kwargs,
     ):
         """
@@ -168,9 +170,14 @@ class COSModelRegistry(S3ArtifactRepository):
             The model is temporarily saved to disk before being logged to the configured
             artifact storage system.
         """
-
-        with TempDir() as tmp:
-            local_path = tmp.path("model")
+        context = nullcontext() if local_path_storage is not None else TempDir()
+        artifact_path_arg = "placeholder" if local_path_storage is not None else None
+        with context as tmp:
+            local_path = (
+                os.path.join(local_path_storage, self._model_name)
+                if local_path_storage is not None
+                else tmp.path("model")  # type: ignore
+            )
             mlflow.pyfunc.save_model(
                 path=local_path,
                 python_model=model_code_path,
@@ -178,7 +185,7 @@ class COSModelRegistry(S3ArtifactRepository):
                 **kwargs,
             )
 
-            self.log_artifacts(local_dir=local_path)
+            self.log_artifacts(local_dir=local_path, artifact_path=artifact_path_arg)
 
     @validate_call(validate_return=True)
     def _get_remote_fingerprint(self) -> str:
@@ -424,13 +431,14 @@ class COSModelRegistry(S3ArtifactRepository):
             raise ModelAlreadyExistsError(MODEL_ALREADY_EXISTS)
         self.clean_pycache_files(local_dir)
         self.write_hash(directory=local_dir)
-        super().log_artifacts(local_dir)
-        msg = f"Model {self._model_name} version {self._model_version} has been logged to the registry: {self.artifact_uri}"
-        logger.info(msg)
-        print_colored_message(
-            color=Color.GREEN_BOLD,
-            message=msg,
-        )
+        if artifact_path is None:
+            super().log_artifacts(local_dir)
+            msg = f"Model {self._model_name} version {self._model_version} has been logged to the registry: {self.artifact_uri}"
+            logger.info(msg)
+            print_colored_message(
+                color=Color.GREEN_BOLD,
+                message=msg,
+            )
 
     @staticmethod
     @validate_call

@@ -656,3 +656,40 @@ def test_model_registration_multiple_artifacts_with_moving(
         },
     )
     assert prediction_lowering == [1, 2]
+
+
+def test_local_model_registry(bucket_name: str, tmp_path: Path):
+    registry = COSModelRegistry(
+        bucket=bucket_name,
+        model_name="test",
+        model_version="latest",
+    )
+    registry.log_pyfunc_model_as_code(
+        model_code_path=FIXTURES_PATH / "modelascode" / "modelandtokenizer.py",
+        artifacts={
+            "model": FIXTURES_PATH / "artifacts" / "modelwithtokenizer" / "model",
+            "tokenizer": FIXTURES_PATH
+            / "artifacts"
+            / "modelwithtokenizer"
+            / "tokenizer",
+        },
+        input_example=(["yo sabes", "el y ella"], dict(lower=True)),
+        local_path_storage=tmp_path,
+    )
+    expected_files = {
+        tmp_path.joinpath("test/"),
+        tmp_path.joinpath("test/modelandtokenizer.py"),
+        tmp_path.joinpath("test/python_env.yaml"),
+        tmp_path.joinpath("test/conda.yaml"),
+        tmp_path.joinpath("test/requirements.txt"),
+        tmp_path.joinpath("test/artifacts/model/model.pkl"),
+        tmp_path.joinpath("test/artifacts/tokenizer/"),
+        tmp_path.joinpath("test/artifacts/tokenizer/tokenizer.pkl"),
+        tmp_path.joinpath("test/MLmodel"),
+        tmp_path.joinpath("test/fingerprint"),
+        tmp_path.joinpath("test/artifacts"),
+        tmp_path.joinpath("test/artifacts/model"),
+        tmp_path.joinpath("test/serving_input_example.json"),
+        tmp_path.joinpath("test/input_example.json"),
+    }
+    assert set(tmp_path.glob("**/*")) == expected_files
