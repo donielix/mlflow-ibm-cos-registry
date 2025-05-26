@@ -20,6 +20,22 @@ from mlflow_ibmcos.utils import Color, print_colored_message
 logger = Logger(__name__)
 
 
+def _safe_remove_temp_file(temp_file_path: str, logger_instance: Logger):
+    """
+    Safely removes a temporary file, logging any errors.
+    """
+    if os.path.exists(temp_file_path):
+        try:
+            os.remove(temp_file_path)
+            logger_instance.info(
+                f"Successfully removed temporary file {temp_file_path}"
+            )
+        except Exception as e:
+            logger_instance.error(
+                f"Failed to remove temporary file {temp_file_path}: {e}"
+            )
+
+
 def move_artifacts_hook(func: Callable) -> Callable:
     """
     Decorator to move artifacts to a final location after
@@ -80,9 +96,26 @@ def move_artifacts_hook(func: Callable) -> Callable:
                 logger.info(
                     f"Moved artifact {artifact_to_move} from {old_dest} to {new_dest}"
                 )
-            with open(mlmodel_path, "w") as f:
-                yaml.safe_dump(mlmodel, f)
-            logger.info("Updated MLmodel file with new artifact paths")
+
+            # Atomic write for MLmodel file
+            temp_mlmodel_path = mlmodel_path + ".tmp"
+            try:
+                with open(temp_mlmodel_path, "w") as f:
+                    yaml.safe_dump(mlmodel, f)
+                os.replace(temp_mlmodel_path, mlmodel_path)
+                logger.info("Updated MLmodel file with new artifact paths")
+            except Exception as e:
+                logger.error(f"Failed to atomically update MLmodel file: {e}")
+                # Attempt to remove the temporary file if it exists
+                _safe_remove_temp_file(temp_mlmodel_path, logger)
+                raise  # Re-raise the original exception
+            finally:
+                # Ensure temporary file is removed if os.replace failed before it could run
+                # or if an unexpected error occurred after os.replace but before this block
+                # This check is still useful in case the exception occurred after os.replace
+                # but before the try block completed, or if os.replace itself failed in a
+                # way that left the temp file.
+                _safe_remove_temp_file(temp_mlmodel_path, logger)
 
         return result
 
