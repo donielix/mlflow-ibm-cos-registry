@@ -1,7 +1,8 @@
-from typing import Dict, Union
-from typing_extensions import Annotated
 from pathlib import Path
+from typing import Dict, Union
+
 from pydantic import AfterValidator, Field
+from typing_extensions import Annotated
 
 
 def validate_model_path(v: Union[str, Path]) -> str:
