@@ -1,6 +1,7 @@
 from typing import List
-import mlflow
+
 import cloudpickle
+import mlflow
 
 
 class TestModelWithParams(mlflow.pyfunc.PythonModel):
