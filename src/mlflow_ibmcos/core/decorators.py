@@ -1,11 +1,10 @@
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
-from pydantic import validate_call
 import yaml
-
+from pydantic import validate_call
 
 from mlflow_ibmcos.core.exceptions import (
     MLMODEL_FILE_NOT_FOUND,
@@ -15,7 +14,6 @@ from mlflow_ibmcos.core.exceptions import (
 from mlflow_ibmcos.logger import Logger
 from mlflow_ibmcos.schemas import NonEmptyDict
 from mlflow_ibmcos.utils import Color, print_colored_message
-
 
 logger = Logger(__name__)
 
