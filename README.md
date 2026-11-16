@@ -44,13 +44,12 @@ registry = COSModelRegistry(
     model_version="latest",
     endpoint_url="https://s3.us-south.cloud-object-storage.appdomain.cloud",
     aws_access_key_id="your-access-key",
-    aws_secret_access_key="your-secret-key"
+    aws_secret_access_key="your-secret-key",
 )
 
 # Log a model
 registry.log_pyfunc_model_as_code(
-    model_code_path="path/to/model_code.py",
-    artifacts={"model": "path/to/model.pkl"}
+    model_code_path="path/to/model_code.py", artifacts={"model": "path/to/model.pkl"}
 )
 
 # Download a model
@@ -77,7 +76,7 @@ The registry requires IBM COS credentials which can be provided in several ways:
        bucket="my-bucket",
        endpoint_url="https://s3.example.com",
        aws_access_key_id="your-access-key",
-       aws_secret_access_key="your-secret-key"
+       aws_secret_access_key="your-secret-key",
    )
    ```
 
@@ -106,10 +105,7 @@ The registry requires IBM COS credentials which can be provided in several ways:
 # Upload a model defined in a Python file
 registry.log_pyfunc_model_as_code(
     model_code_path="path/to/model_code.py",
-    artifacts={
-        "model": "path/to/model.pkl",
-        "encoder": "path/to/encoder.pkl"
-    }
+    artifacts={"model": "path/to/model.pkl", "encoder": "path/to/encoder.pkl"},
 )
 ```
 
