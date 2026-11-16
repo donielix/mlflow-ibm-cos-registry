@@ -1,7 +1,8 @@
-from functools import partial
 import os
+from functools import partial
 from pathlib import Path
 from typing import Callable, Dict, List
+
 import pytest
 from pytest_mock import MockerFixture
 
@@ -77,7 +78,6 @@ def mock_hash(mocker: MockerFixture):
             hash_ = f.read()
         with open(os.path.join(tmp_path, "fingerprint"), "w") as f:
             f.write(hash_)
-        return
 
     def wrapper(tmp_path: Path):
         return mocker.patch.object(
