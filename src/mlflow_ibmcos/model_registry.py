@@ -1,16 +1,19 @@
-from contextlib import nullcontext
 import os
-from pathlib import Path
 import shutil
+from contextlib import nullcontext
+from functools import lru_cache
+from pathlib import Path
 from typing import Dict, Optional, Union
 from warnings import warn
-from mlflow.store.artifact.s3_artifact_repo import S3ArtifactRepository
+
 import ibm_boto3
-from ibm_botocore.config import Config
+import mlflow
 from dirhash import dirhash
-from functools import lru_cache
+from ibm_botocore.config import Config
+from mlflow.store.artifact.s3_artifact_repo import S3ArtifactRepository
 from mlflow.utils.file_utils import TempDir
 from pydantic import validate_call
+
 from mlflow_ibmcos.core.decorators import move_artifacts_hook
 from mlflow_ibmcos.core.exceptions import (
     COS_ARGUMENT_REQUIRED,
@@ -20,7 +23,6 @@ from mlflow_ibmcos.core.exceptions import (
     FingerPrintNotFound,
     ModelAlreadyExistsError,
 )
-import mlflow
 from mlflow_ibmcos.logger import Logger
 from mlflow_ibmcos.schemas import ModelPath, NonEmptyDict
 from mlflow_ibmcos.utils import Color, print_colored_message

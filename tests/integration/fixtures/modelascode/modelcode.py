@@ -1,7 +1,8 @@
 from typing import List
+
+import cloudpickle
 import mlflow
 from pydantic import BaseModel
-import cloudpickle
 
 
 class ModelInput(BaseModel):
