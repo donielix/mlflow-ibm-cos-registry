@@ -3,14 +3,15 @@ from typing import Any, Callable, Dict, Generator
 
 import mlflow
 import mlflow.exceptions
+import pytest
 from pydantic import ValidationError
+
 from mlflow_ibmcos.core.exceptions import (
     MODEL_ALREADY_EXISTS,
     ArgumentRequired,
     ModelAlreadyExistsError,
 )
 from mlflow_ibmcos.model_registry import COSModelRegistry
-import pytest
 
 FIXTURES_PATH = Path(__file__).parent / "fixtures"
 

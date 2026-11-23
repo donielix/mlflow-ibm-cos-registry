@@ -9,28 +9,18 @@ MLMODEL_FILE_NOT_FOUND = "MLmodel file not found in {}. Cannot move artifacts."
 class ModelAlreadyExistsError(Exception):
     """Exception raised when a model already exists in the registry."""
 
-    pass
-
 
 class ArgumentRequired(Exception):
     """Exception raised when a required argument is missing."""
-
-    pass
 
 
 class FingerPrintNotFound(Exception):
     """Exception raised when a fingerprint is not found."""
 
-    pass
-
 
 class MLModelNotFoundError(Exception):
     """Exception raised when the MLmodel file is not found."""
 
-    pass
-
 
 class ArtifactNotFoundError(Exception):
     """Exception raised when an artifact is not found."""
-
-    pass
